@@ -326,6 +326,17 @@ body::before {
 }
 
 /* CATEGORY LIST */
+.sub-toggle { display:inline-flex; align-items:center; gap:5px; background:var(--surface2); border:1px solid var(--border2); padding:3px 10px; border-radius:6px; font-size:10px; color:var(--text-muted); cursor:pointer; user-select:none; transition:all .2s; margin-right:auto; font-family:var(--sans); }
+.sub-toggle:hover { border-color:var(--accent); }
+.sub-toggle.active { background:rgba(14,165,233,0.15); border-color:var(--accent); color:var(--accent2); }
+.sub-toggle .st-icon { font-size:12px; transition:transform .2s; }
+.sub-toggle.active .st-icon { transform:rotate(90deg); }
+.cat-group-header { display:flex; align-items:center; gap:8px; padding:8px 10px; margin-top:8px; background:var(--surface2); border:1px solid var(--border2); border-radius:8px; cursor:default; }
+.cat-group-header .cgh-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+.cat-group-header .cgh-label { font-size:12px; font-weight:700; color:var(--text); flex:1; text-align:right; }
+.cat-group-header .cgh-count { font-size:11px; font-family:var(--mono); color:var(--accent2); font-weight:600; }
+.cat-group-header .cgh-pct { font-size:10px; font-family:var(--mono); color:var(--text-muted); margin-right:4px; }
+.cat-group-subs { padding-right:16px; border-right:2px solid var(--border2); margin-right:6px; margin-top:4px; margin-bottom:4px; }
 .cat-list { display: flex; flex-direction: column; gap: 6px; }
 .cat-item { display: flex; align-items: center; gap: 10px; }
 .cat-label { font-size: 11px; font-family: var(--sans); color: var(--text-muted); width: 220px; min-width: 120px; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; }
@@ -452,6 +463,7 @@ body::before {
         <div class="sdot" style="background:#3b82f6;box-shadow:0 0 7px #3b82f6"></div>
         <span class="stitle">📊 المؤشرات</span>
         <span class="ssub" id="muSub"></span>
+        <div class="sub-toggle" id="muSubToggle" onclick="toggleSubView('mu')"><span class="st-icon">◂</span> البنود الفرعية</div>
       </div>
       <div class="cat-list" id="muList"></div>
     </div>
@@ -462,6 +474,7 @@ body::before {
         <div class="sdot" style="background:#8b5cf6;box-shadow:0 0 7px #8b5cf6"></div>
         <span class="stitle">📋 التقييمات</span>
         <span class="ssub" id="taqSub"></span>
+        <div class="sub-toggle" id="taqSubToggle" onclick="toggleSubView('taq')"><span class="st-icon">◂</span> البنود الفرعية</div>
       </div>
       <div class="grade-legend">
         <div class="grade-legend-item"><div class="grade-dot" style="background:#059669"></div><span>أ — ممتاز</span></div>
@@ -478,6 +491,7 @@ body::before {
         <div class="sdot" style="background:#dc2626;box-shadow:0 0 7px #dc2626"></div>
         <span class="stitle">⚠️ المخالفات</span>
         <span class="ssub" id="mukhSub"></span>
+        <div class="sub-toggle" id="mukhSubToggle" onclick="toggleSubView('mukh')"><span class="st-icon">◂</span> البنود الفرعية</div>
       </div>
       <div class="cat-list" id="mukhList"></div>
     </div>
@@ -1002,54 +1016,190 @@ function groupAndSort(recs,field){
   return Object.entries(map).sort((a,b)=>b[1]-a[1]).map(([label,count])=>({label,count,pct:total?(count/total*100).toFixed(1):'0'}));
 }
 
+// Group records by mainCat -> subCat nested
+function groupNestedByMain(recs){
+  const mainMap={};let total=0;
+  for(const r of recs){
+    const main=r.mainCat||'غير محدد';
+    const sub=r.subCat||'غير محدد';
+    if(!mainMap[main])mainMap[main]={total:0,subs:{}};
+    mainMap[main].total++;total++;
+    mainMap[main].subs[sub]=(mainMap[main].subs[sub]||0)+1;
+  }
+  return Object.entries(mainMap).sort((a,b)=>b[1].total-a[1].total).map(([main,info])=>({
+    main, total:info.total, pct:total?(info.total/total*100).toFixed(1):'0',
+    subs:Object.entries(info.subs).sort((a,b)=>b[1]-a[1]).map(([sub,cnt])=>({label:sub,count:cnt,pct:info.total?(cnt/info.total*100).toFixed(1):'0'}))
+  }));
+}
+
+// Render nested bar list: mainCat header + subCat bars
+function renderNestedBarList(containerId,grouped,colors){
+  const wrap=document.getElementById(containerId);wrap.innerHTML='';
+  if(!grouped.length)return;
+  grouped.forEach((g,gi)=>{
+    const color=colors[gi%colors.length];
+    // Main category header
+    const hdr=document.createElement('div');hdr.className='cat-group-header';
+    hdr.innerHTML=`<div class="cgh-dot" style="background:${color}"></div><div class="cgh-label">${g.main}</div><span class="cgh-pct">${g.pct}%</span><span class="cgh-count">${fmtNum(g.total)}</span>`;
+    wrap.appendChild(hdr);
+    // Sub items
+    const subsDiv=document.createElement('div');subsDiv.className='cat-group-subs';
+    const subMax=g.subs.length?g.subs[0].count:1;
+    g.subs.forEach((s,si)=>{
+      const item=document.createElement('div');item.className='cat-item';
+      const lbl=document.createElement('div');lbl.className='cat-label';lbl.textContent=s.label;lbl.title=s.label;
+      const barWrap=document.createElement('div');barWrap.className='cat-bar-wrap';
+      const bar=document.createElement('div');bar.className='cat-bar';
+      bar.style.width=Math.max((s.count/subMax)*100,2)+'%';
+      bar.style.background=color;bar.style.opacity=String(0.55+0.45*(1-si/Math.max(g.subs.length-1,1)));
+      const val=document.createElement('span');val.className='cat-bar-val';val.textContent=fmtNum(s.count);
+      bar.appendChild(val);barWrap.appendChild(bar);
+      const pctEl=document.createElement('div');pctEl.className='cat-pct';pctEl.textContent=s.pct+'%';
+      item.appendChild(lbl);item.appendChild(barWrap);item.appendChild(pctEl);
+      bar.style.cursor='pointer';
+      bar.addEventListener('mouseenter',e=>showTT(e,s.label,`التصنيف الرئيسي: <strong style="color:${color}">${g.main}</strong><br>العدد: <strong>${fmtNum(s.count)}</strong><br>النسبة من الرئيسي: <strong>${s.pct}%</strong>`));
+      bar.addEventListener('mouseleave',hideTT);
+      subsDiv.appendChild(item);
+    });
+    wrap.appendChild(subsDiv);
+  });
+}
+
+// Sub-category toggle state
+const subViewState={mu:false,taq:false,mukh:false};
+function toggleSubView(section){
+  subViewState[section]=!subViewState[section];
+  const btn=document.getElementById(section+'SubToggle');
+  if(btn)btn.classList.toggle('active',subViewState[section]);
+  const recs=filtered();
+  if(section==='mu')renderMuBreakdown(recs);
+  else if(section==='taq')renderTaqBreakdown(recs);
+  else if(section==='mukh')renderMukhBreakdown(recs);
+}
+
 // المؤشرات breakdown
 function renderMuBreakdown(recs){
   const muRecs=recs.filter(r=>r.recType==='مؤشر');
-  const data=groupAndSort(muRecs,'mainCat');
-  document.getElementById('muSub').textContent=`${fmtNum(muRecs.length)} سجل — ${data.length} مؤشر`;
   const colors=['#3b82f6','#2563eb','#1d4ed8','#1e40af','#60a5fa','#93c5fd','#06b6d4','#0891b2'];
-  renderBarList('muList',null,data,i=>colors[i%colors.length]);
+  if(!subViewState.mu){
+    const data=groupAndSort(muRecs,'mainCat');
+    document.getElementById('muSub').textContent=`${fmtNum(muRecs.length)} سجل — ${data.length} مؤشر`;
+    renderBarList('muList',null,data,i=>colors[i%colors.length]);
+  } else {
+    const grouped=groupNestedByMain(muRecs);
+    document.getElementById('muSub').textContent=`${fmtNum(muRecs.length)} سجل — ${grouped.length} تصنيف رئيسي`;
+    renderNestedBarList('muList',grouped,colors);
+  }
 }
 
 // التقييمات breakdown with grade sub-bars
 function renderTaqBreakdown(recs){
   const taqRecs=recs.filter(r=>r.recType==='تقييم');
   const gradeColors={'أ':'#059669','ب':'#3b82f6','ج':'#f59e0b','د':'#dc2626'};
-  // Group by mainCat
-  const catMap={};
-  for(const r of taqRecs){
-    const cat=r.mainCat||'غير محدد';
-    if(!catMap[cat])catMap[cat]={total:0,grades:{'أ':0,'ب':0,'ج':0,'د':0,'':0}};
-    catMap[cat].total++;
-    catMap[cat].grades[r.grade]=(catMap[cat].grades[r.grade]||0)+1;
-  }
-  const sorted=Object.entries(catMap).sort((a,b)=>b[1].total-a[1].total);
-  document.getElementById('taqSub').textContent=`${fmtNum(taqRecs.length)} سجل — ${sorted.length} تصنيف`;
 
-  const wrap=document.getElementById('taqList');wrap.innerHTML='';
+  if(!subViewState.taq){
+    // Original mainCat view
+    const catMap={};
+    for(const r of taqRecs){
+      const cat=r.mainCat||'غير محدد';
+      if(!catMap[cat])catMap[cat]={total:0,grades:{'أ':0,'ب':0,'ج':0,'د':0,'':0}};
+      catMap[cat].total++;
+      catMap[cat].grades[r.grade]=(catMap[cat].grades[r.grade]||0)+1;
+    }
+    const sorted=Object.entries(catMap).sort((a,b)=>b[1].total-a[1].total);
+    document.getElementById('taqSub').textContent=`${fmtNum(taqRecs.length)} سجل — ${sorted.length} تصنيف`;
+    renderTaqBars('taqList',sorted,gradeColors);
+  } else {
+    // Nested: mainCat headers with subCat items underneath
+    const mainMap={};
+    for(const r of taqRecs){
+      const main=r.mainCat||'غير محدد';
+      const sub=r.subCat||'غير محدد';
+      if(!mainMap[main])mainMap[main]={total:0,subs:{}};
+      mainMap[main].total++;
+      if(!mainMap[main].subs[sub])mainMap[main].subs[sub]={total:0,grades:{'أ':0,'ب':0,'ج':0,'د':0,'':0}};
+      mainMap[main].subs[sub].total++;
+      mainMap[main].subs[sub].grades[r.grade]=(mainMap[main].subs[sub].grades[r.grade]||0)+1;
+    }
+    const sortedMain=Object.entries(mainMap).sort((a,b)=>b[1].total-a[1].total);
+    document.getElementById('taqSub').textContent=`${fmtNum(taqRecs.length)} سجل — ${sortedMain.length} تصنيف رئيسي`;
+    const wrap=document.getElementById('taqList');wrap.innerHTML='';
+    const taqColors=['#8b5cf6','#7c3aed','#6d28d9','#5b21b6','#a78bfa','#c4b5fd'];
+    const globalMax=sortedMain.length?Math.max(...sortedMain.map(([,v])=>Math.max(...Object.values(v.subs).map(s=>s.total)))):1;
+
+    sortedMain.forEach(([mainCat,mainInfo],mi)=>{
+      const color=taqColors[mi%taqColors.length];
+      const pct=taqRecs.length?(mainInfo.total/taqRecs.length*100).toFixed(1):'0';
+      // Group header
+      const hdr=document.createElement('div');hdr.className='cat-group-header';
+      hdr.innerHTML=`<div class="cgh-dot" style="background:${color}"></div><div class="cgh-label">${mainCat.replace(/^تقييم\s*/,'')}</div><span class="cgh-pct">${pct}%</span><span class="cgh-count">${fmtNum(mainInfo.total)}</span>`;
+      wrap.appendChild(hdr);
+
+      // Sub items
+      const subsDiv=document.createElement('div');subsDiv.className='cat-group-subs';
+      const sortedSubs=Object.entries(mainInfo.subs).sort((a,b)=>b[1].total-a[1].total);
+      const subMax=sortedSubs.length?sortedSubs[0][1].total:1;
+
+      sortedSubs.forEach(([subCat,info])=>{
+        const item=document.createElement('div');item.className='cat-item';item.style.flexWrap='wrap';
+        const lbl=document.createElement('div');lbl.className='cat-label';lbl.textContent=subCat.replace(/^تقييم\s*/,'');lbl.title=subCat;
+        const barWrap=document.createElement('div');barWrap.className='cat-bar-wrap';barWrap.style.display='flex';barWrap.style.overflow='hidden';
+        const totalWidth=Math.max((info.total/subMax)*100,5);
+        ['أ','ب','ج','د'].forEach(g=>{
+          const cnt=info.grades[g]||0;if(!cnt)return;
+          const seg=document.createElement('div');
+          seg.style.cssText=`width:${(cnt/info.total)*totalWidth}%;height:100%;background:${gradeColors[g]};display:flex;align-items:center;justify-content:center;transition:width 0.3s;cursor:pointer;`;
+          if(cnt>=3){const v=document.createElement('span');v.className='cat-bar-val';v.style.fontSize='9px';v.textContent=`${g} ${cnt}`;seg.appendChild(v);}
+          seg.addEventListener('mouseenter',e=>showTT(e,`${subCat}`,`التقييم: <strong style="color:${gradeColors[g]}">${g}</strong><br>العدد: <strong>${cnt}</strong><br>النسبة: <strong>${(cnt/info.total*100).toFixed(1)}%</strong>`));
+          seg.addEventListener('mouseleave',hideTT);
+          barWrap.appendChild(seg);
+        });
+        const noGrade=info.grades['']||0;
+        if(noGrade>0){
+          const seg=document.createElement('div');
+          seg.style.cssText=`width:${(noGrade/info.total)*totalWidth}%;height:100%;background:#94a3b8;display:flex;align-items:center;justify-content:center;cursor:pointer;`;
+          seg.addEventListener('mouseenter',e=>showTT(e,subCat,`بدون تقييم: <strong>${noGrade}</strong>`));
+          seg.addEventListener('mouseleave',hideTT);
+          barWrap.appendChild(seg);
+        }
+        const pctEl=document.createElement('div');pctEl.className='cat-pct';pctEl.textContent=info.total;
+        item.appendChild(lbl);item.appendChild(barWrap);item.appendChild(pctEl);
+        subsDiv.appendChild(item);
+        // grade detail row
+        const detailRow=document.createElement('div');
+        detailRow.style.cssText='display:flex;gap:6px;margin-top:2px;margin-bottom:6px;flex-wrap:wrap;padding-right:110px;';
+        ['أ','ب','ج','د'].forEach(g=>{
+          const cnt=info.grades[g]||0;
+          const tag=document.createElement('span');
+          tag.style.cssText=`font-size:10px;font-family:var(--mono);color:${gradeColors[g]};padding:2px 8px;border-radius:6px;background:${gradeColors[g]}12;border:1px solid ${gradeColors[g]}30;`;
+          tag.textContent=`${g}: ${cnt}`;detailRow.appendChild(tag);
+        });
+        subsDiv.appendChild(detailRow);
+      });
+      wrap.appendChild(subsDiv);
+    });
+  }
+}
+
+// Helper: render taq bars (used for non-nested taq view)
+function renderTaqBars(containerId,sorted,gradeColors){
+  const wrap=document.getElementById(containerId);wrap.innerHTML='';
   if(!sorted.length)return;
   const maxV=sorted[0][1].total;
-
   sorted.forEach(([cat,info])=>{
     const item=document.createElement('div');item.className='cat-item';item.style.flexWrap='wrap';
     const lbl=document.createElement('div');lbl.className='cat-label';lbl.textContent=cat.replace(/^تقييم\s*/,'');lbl.title=cat;
     const barWrap=document.createElement('div');barWrap.className='cat-bar-wrap';barWrap.style.display='flex';barWrap.style.overflow='hidden';
-
     const totalWidth=Math.max((info.total/maxV)*100,5);
-    // Build stacked grade bar
     ['أ','ب','ج','د'].forEach(g=>{
-      const cnt=info.grades[g]||0;
-      if(!cnt)return;
+      const cnt=info.grades[g]||0;if(!cnt)return;
       const seg=document.createElement('div');
       seg.style.cssText=`width:${(cnt/info.total)*totalWidth}%;height:100%;background:${gradeColors[g]};display:flex;align-items:center;justify-content:center;transition:width 0.3s;cursor:pointer;`;
-      if(cnt>=3){
-        const v=document.createElement('span');v.className='cat-bar-val';v.style.fontSize='9px';v.textContent=`${g} ${cnt}`;seg.appendChild(v);
-      }
+      if(cnt>=3){const v=document.createElement('span');v.className='cat-bar-val';v.style.fontSize='9px';v.textContent=`${g} ${cnt}`;seg.appendChild(v);}
       seg.addEventListener('mouseenter',e=>showTT(e,`${cat}`,`التقييم: <strong style="color:${gradeColors[g]}">${g}</strong><br>العدد: <strong>${cnt}</strong><br>النسبة: <strong>${(cnt/info.total*100).toFixed(1)}%</strong>`));
       seg.addEventListener('mouseleave',hideTT);
       barWrap.appendChild(seg);
     });
-    // Remaining (no grade)
     const noGrade=info.grades['']||0;
     if(noGrade>0){
       const seg=document.createElement('div');
@@ -1058,33 +1208,33 @@ function renderTaqBreakdown(recs){
       seg.addEventListener('mouseleave',hideTT);
       barWrap.appendChild(seg);
     }
-
     const pctEl=document.createElement('div');pctEl.className='cat-pct';pctEl.textContent=info.total;
     item.appendChild(lbl);item.appendChild(barWrap);item.appendChild(pctEl);
-
-    // Grade detail row below
     const detailRow=document.createElement('div');
     detailRow.style.cssText='display:flex;gap:6px;margin-top:2px;margin-bottom:6px;flex-wrap:wrap;padding-right:110px;';
     ['أ','ب','ج','د'].forEach(g=>{
       const cnt=info.grades[g]||0;
       const tag=document.createElement('span');
       tag.style.cssText=`font-size:10px;font-family:var(--mono);color:${gradeColors[g]};padding:2px 8px;border-radius:6px;background:${gradeColors[g]}12;border:1px solid ${gradeColors[g]}30;`;
-      tag.textContent=`${g}: ${cnt}`;
-      detailRow.appendChild(tag);
+      tag.textContent=`${g}: ${cnt}`;detailRow.appendChild(tag);
     });
-
-    wrap.appendChild(item);
-    wrap.appendChild(detailRow);
+    wrap.appendChild(item);wrap.appendChild(detailRow);
   });
 }
 
 // المخالفات breakdown
 function renderMukhBreakdown(recs){
   const mukhRecs=recs.filter(r=>r.recType==='مخالفة');
-  const data=groupAndSort(mukhRecs,'mainCat');
-  document.getElementById('mukhSub').textContent=`${fmtNum(mukhRecs.length)} سجل — ${data.length} تصنيف`;
   const colors=['#dc2626','#ef4444','#f87171','#b91c1c','#991b1b','#f97316','#ea580c'];
-  renderBarList('mukhList',null,data,i=>colors[i%colors.length]);
+  if(!subViewState.mukh){
+    const data=groupAndSort(mukhRecs,'mainCat');
+    document.getElementById('mukhSub').textContent=`${fmtNum(mukhRecs.length)} سجل — ${data.length} تصنيف`;
+    renderBarList('mukhList',null,data,i=>colors[i%colors.length]);
+  } else {
+    const grouped=groupNestedByMain(mukhRecs);
+    document.getElementById('mukhSub').textContent=`${fmtNum(mukhRecs.length)} سجل — ${grouped.length} تصنيف رئيسي`;
+    renderNestedBarList('mukhList',grouped,colors);
+  }
 }
 
 // Phase breakdown
@@ -1190,19 +1340,22 @@ function renderMap(recs){
     const peakHour=Object.entries(loc.hours).sort((a,b)=>b[1]-a[1])[0];
     const topHay=Object.entries(loc.hays||{}).sort((a,b)=>b[1]-a[1])[0];
     const hayLine=topHay?`<div style="margin-bottom:4px">الحي: <strong style="color:var(--green)">${topHay[0]}</strong></div>`:'';
+    const sortedDates=[...loc.dates].sort();
+    const datesLine=sortedDates.map(d=>`<span style="display:inline-block;background:rgba(59,130,246,0.1);border:1px solid rgba(59,130,246,0.25);padding:1px 6px;border-radius:4px;margin:1px;font-family:var(--mono);font-size:10px;color:var(--accent2)">${d}</span>`).join(' ');
 
     marker.bindPopup(`
       <div style="font-family:var(--sans);direction:rtl">
         <div style="font-weight:700;color:var(--accent2);margin-bottom:6px">📍 ${loc.lat.toFixed(5)}, ${loc.lng.toFixed(5)}</div>
         ${hayLine}
         <div style="margin-bottom:4px">المخالفات: <strong style="color:var(--accent)">${loc.count}</strong></div>
-        <div style="margin-bottom:4px">الأيام: <strong>${loc.dates.size}</strong></div>
-        <div style="margin-bottom:6px">ذروة الساعة: <strong>${peakHour?peakHour[0]+':00':'—'}</strong></div>
+        <div style="margin-bottom:4px">ذروة الساعة: <strong>${peakHour?peakHour[0]+':00':'—'}</strong></div>
+        <div style="margin-bottom:6px">📅 التواريخ (${loc.dates.size}):</div>
+        <div style="margin-bottom:6px;display:flex;flex-wrap:wrap;gap:2px">${datesLine}</div>
         <div style="border-top:1px solid var(--border2);padding-top:6px;font-size:11px">
           ${rasidList}
         </div>
       </div>
-    `,{maxWidth:260});
+    `,{maxWidth:280});
 
     marker.addTo(mapInstance);
     mapMarkers.push(marker);
